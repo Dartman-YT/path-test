@@ -1,9 +1,13 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { CareerOption, RoadmapPhase, NewsItem, RoadmapItem } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Helper to get AI instance safely at runtime
+const getAI = () => {
+  return new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+};
 
 export const analyzeInterests = async (answers: string[]): Promise<CareerOption[]> => {
+  const ai = getAI();
   const prompt = `
     User profile answers:
     ${answers.map((a, i) => `${i + 1}. ${a}`).join('\n')}
@@ -39,6 +43,7 @@ export const analyzeInterests = async (answers: string[]): Promise<CareerOption[
 };
 
 export const searchCareers = async (query: string): Promise<CareerOption[]> => {
+  const ai = getAI();
   const prompt = `
     User wants to search for a career path related to: "${query}".
     
@@ -112,6 +117,7 @@ export const generateRoadmap = async (
       startingPhaseNumber?: number;
   }
 ): Promise<RoadmapPhase[]> => {
+  const ai = getAI();
   // Calculate exact duration matching Dashboard logic (Inclusive Days)
   const start = new Date();
   start.setHours(12, 0, 0, 0);
@@ -272,6 +278,7 @@ export const generateRoadmap = async (
 
 export const fetchTechNews = async (careerInterest: string): Promise<NewsItem[]> => {
   try {
+    const ai = getAI();
     // We use gemini-2.5-flash which is generally stable for tools.
     // We REMOVE the responseSchema to avoid the "Internal Error 500" conflict 
     // that occurs when combining tools (googleSearch) with strict JSON schemas.
