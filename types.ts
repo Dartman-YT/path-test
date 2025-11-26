@@ -1,6 +1,12 @@
+
 export enum UserRole {
   NEW = 'NEW',
   RETURNING = 'RETURNING'
+}
+
+export interface ThemePreferences {
+  mode: 'dark' | 'light';
+  primaryColor: 'indigo' | 'emerald' | 'violet' | 'rose' | 'amber' | 'blue';
 }
 
 export interface UserProfile {
@@ -9,6 +15,10 @@ export interface UserProfile {
   securityKey: string; // For password recovery
   subscriptionStatus: 'free' | 'monthly' | 'yearly';
   onboardingComplete: boolean;
+  theme: ThemePreferences;
+  xp: number;
+  streak: number;
+  lastDailyChallenge?: string; // ISO Date of last completed challenge (Global for Streak/XP)
   // Support for multiple careers, each with its own timeline
   activeCareers: {
     careerId: string;
@@ -19,6 +29,7 @@ export interface UserProfile {
     experienceLevel: 'beginner' | 'intermediate' | 'advanced';
     focusAreas?: string; // specific topics for upskilling
     lastAdaptationCheck?: number; // timestamp of last AI check
+    lastDailyChallenge?: string; // ISO Date of last completed challenge for THIS career
   }[];
   currentCareerId?: string;
 }
@@ -47,6 +58,7 @@ export interface RoadmapItem {
 export interface RoadmapPhase {
   phaseName: string;
   items: RoadmapItem[];
+  completionSummary?: string; // AI generated summary when phase completes
 }
 
 export interface NewsItem {
@@ -55,4 +67,37 @@ export interface NewsItem {
   url: string;
   source: string;
   date: string;
+}
+
+export interface DailyChallenge {
+  question: string;
+  options: string[];
+  correctAnswer: number; // index
+  explanation: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+}
+
+export interface SkillAssessment {
+  questions: {
+    text: string;
+    options: string[];
+    correctIndex: number;
+  }[];
+}
+
+export interface Simulation {
+  title: string;
+  scenario: string;
+  role: string;
+  options: {
+    text: string;
+    outcome: string; // feedback
+    score: number; // points awarded
+  }[];
+}
+
+export interface TriviaQuestion {
+  question: string;
+  options: string[];
+  correctIndex: number;
 }
