@@ -1,27 +1,45 @@
 import React, { useState } from 'react';
-import { CareerOption } from '../types';
-import { analyzeInterests, searchCareers } from '../services/gemini';
-import { Sparkles, CheckCircle, BookOpen, Clock, Target, ChevronRight, ArrowLeft, BarChart3, GraduationCap, Search, RefreshCw } from 'lucide-react';
+import { CareerOption, UserProfile, SkillAssessment } from '../types';
+import { analyzeInterests, searchCareers, generateSkillAssessment } from '../services/gemini';
+import { Sparkles, CheckCircle, BookOpen, Clock, Target, ChevronRight, ArrowLeft, Search, RefreshCw, BrainCircuit, ArrowRight as ArrowIcon, Compass } from 'lucide-react';
 
 interface OnboardingProps {
   onComplete: (career: CareerOption, eduYear: string, targetDate: string, expLevel: 'beginner' | 'intermediate' | 'advanced', focusAreas: string) => void;
   isNewUser?: boolean;
-  mode?: 'analysis' | 'search'; // New prop to force mode if entered via "Add Career"
+  mode?: 'analysis' | 'search';
+  userTheme?: UserProfile['theme'];
 }
 
-const QUESTIONS = [
-  "What specific topics or hobbies do you lose track of time doing?",
-  "In a group project, do you prefer leading, researching, building, or presenting?",
-  "What is a global problem (climate, health, tech, social) you'd love to help solve?",
-  "Describe your ideal daily work vibe (e.g., quiet coding, busy hospital, creative studio).",
-  "How important is rapid financial growth versus work-life balance for you?"
+interface Question {
+  id: string; text: string; type: 'mcq' | 'text'; options?: string[]; allowOther?: boolean; context: 'general' | 'upskill' | 'both';
+}
+
+const GENERAL_QUESTIONS: Question[] = [
+  { id: 'goal', text: "What is your primary objective today?", type: 'mcq', options: ["Discover a new career path", "Upskill in my current field", "Switch from a different field"], context: 'general', allowOther: false },
+  { id: 'interests', text: "What topics naturally draw your attention?", type: 'mcq', options: ["Technology & Coding", "Art & Design", "Business & Finance", "Science & Research"], allowOther: true, context: 'general' },
+  { id: 'work_style', text: "How do you prefer to solve problems?", type: 'mcq', options: ["Building things (Engineering)", "Analyzing data (Logic)", "Leading teams (Management)", "Creating visuals (Creative)"], allowOther: true, context: 'general' },
+  { id: 'environment', text: "Pick your ideal work environment.", type: 'mcq', options: ["Remote / Home Office", "Fast-paced Startup", "Structured Corporate", "Creative Studio"], allowOther: true, context: 'general' },
+  { id: 'impact', text: "What kind of impact matters most?", type: 'mcq', options: ["Solving complex technical problems", "Improving people's daily lives", "Creating beautiful experiences", "Driving financial growth"], allowOther: true, context: 'general' },
+  { id: 'subjects', text: "Which activity describes your free time?", type: 'mcq', options: ["Gaming or Tinkering", "Reading or Writing", "Socializing", "Drawing or Crafting"], allowOther: true, context: 'general' },
+  { id: 'pace', text: "Preferred work pace?", type: 'mcq', options: ["Steady and Predictable", "Fast and deadline-driven", "Flexible", "Collaborative"], allowOther: true, context: 'general' },
+  { id: 'team_dynamic', text: "Team preference?", type: 'mcq', options: ["Independent contributor", "Small squad", "Large structured team", "Leading others"], allowOther: true, context: 'general' },
+  { id: 'tools', text: "Preferred tools?", type: 'mcq', options: ["Code & Terminal", "Spreadsheets & Data", "Design Software", "Communication Tools"], allowOther: true, context: 'general' },
+  { id: 'success', text: "Success in 5 years looks like...", type: 'mcq', options: ["Subject Matter Expert", "Business Owner", "Corporate Leader", "Work-life Balance"], allowOther: true, context: 'general' }
 ];
 
-export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isNewUser = true, mode = 'analysis' }) => {
-  const [step, setStep] = useState<'questions' | 'analysis' | 'selection' | 'experience' | 'details'>(mode === 'search' ? 'selection' : 'questions');
+const UPSKILL_QUESTIONS: Question[] = [
+  { id: 'current_role', text: "What is your current role or field?", type: 'text', context: 'upskill' },
+  { id: 'focus_gap', text: "Biggest gap in your skillset?", type: 'mcq', options: ["Modern Frameworks", "System Architecture", "Leadership", "Backend Engineering", "AI/ML"], allowOther: true, context: 'upskill' },
+  { id: 'learning_style', text: "How do you learn best?", type: 'mcq', options: ["Hands-on Projects", "Deep Theory", "Video Tutorials", "Interactive Coding"], allowOther: false, context: 'upskill' },
+  { id: 'time_commitment', text: "Daily time commitment?", type: 'mcq', options: ["< 1 hour", "1-2 hours", "3-5 hours", "Full time"], allowOther: false, context: 'upskill' }
+];
+
+export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isNewUser = true, mode = 'analysis', userTheme }) => {
+  const [step, setStep] = useState<'questions' | 'analysis' | 'selection' | 'assessment' | 'experience' | 'details'>(mode === 'search' ? 'selection' : 'questions');
+  const [activeQuestions, setActiveQuestions] = useState<Question[]>(GENERAL_QUESTIONS);
   const [currentQIndex, setCurrentQIndex] = useState(0);
-  const [answers, setAnswers] = useState<string[]>([]);
-  const [currentInput, setCurrentInput] = useState('');
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [otherInput, setOtherInput] = useState('');
   
   const [careers, setCareers] = useState<CareerOption[]>([]);
   const [selectedCareer, setSelectedCareer] = useState<CareerOption | null>(null);
@@ -29,341 +47,224 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isNewUser = 
   const [isSearching, setIsSearching] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   
+  const [assessment, setAssessment] = useState<SkillAssessment | null>(null);
+  const [assessmentAnswers, setAssessmentAnswers] = useState<number[]>([]);
+  const [isAssessmentLoading, setIsAssessmentLoading] = useState(false);
+
   const [eduYear, setEduYear] = useState('');
   const [targetDate, setTargetDate] = useState('');
   const [expLevel, setExpLevel] = useState<'beginner' | 'intermediate' | 'advanced'>('beginner');
   const [focusAreas, setFocusAreas] = useState('');
 
-  const handleAnswer = () => {
-    if (!currentInput.trim()) return;
-    const newAnswers = [...answers, currentInput];
-    setAnswers(newAnswers);
-    setCurrentInput('');
+  // --- Handlers ---
+  const handleMCQSelect = (option: string) => {
+    const currentQ = activeQuestions[currentQIndex];
+    const newAnswers = { ...answers, [currentQ.text]: option };
+    setAnswers(newAnswers); setOtherInput('');
 
-    if (currentQIndex < QUESTIONS.length - 1) {
-      setCurrentQIndex(prev => prev + 1);
-    } else {
-      setStep('analysis');
-      performAnalysis(newAnswers);
+    if (currentQ.id === 'goal') {
+        if (option.includes("Upskill")) setActiveQuestions([activeQuestions[0], ...UPSKILL_QUESTIONS]);
+        else setActiveQuestions(GENERAL_QUESTIONS);
     }
+
+    if (currentQIndex < activeQuestions.length - 1) setTimeout(() => setCurrentQIndex(prev => prev + 1), 300);
+    else performAnalysis(newAnswers);
   };
 
-  const performAnalysis = async (finalAnswers: string[]) => {
-    setIsAnalyzing(true);
+  const handleTextSubmit = () => {
+    if (!otherInput.trim()) return;
+    const currentQ = activeQuestions[currentQIndex];
+    const newAnswers = { ...answers, [currentQ.text]: otherInput };
+    setAnswers(newAnswers); setOtherInput('');
+    if (currentQIndex < activeQuestions.length - 1) setCurrentQIndex(prev => prev + 1);
+    else performAnalysis(newAnswers);
+  };
+
+  const performAnalysis = async (finalAnswers: Record<string, string>) => {
+    setStep('analysis'); setIsAnalyzing(true);
     try {
-      const results = await analyzeInterests(finalAnswers);
-      setCareers(results);
-      setStep('selection');
+      const answerArray = Object.entries(finalAnswers).map(([q, a]) => `${q}: ${a}`);
+      const results = await analyzeInterests(answerArray);
+      setCareers(results); setStep('selection');
     } catch (e) {
-      console.error(e);
-      setCareers([
-         { id: '1', title: 'Software Engineer', description: 'Build scalable systems.', fitScore: 95, reason: 'High logic scores.'},
-         { id: '2', title: 'Data Scientist', description: 'Analyze complex data.', fitScore: 88, reason: 'Love for patterns.'},
-         { id: '3', title: 'Product Manager', description: 'Lead product vision.', fitScore: 82, reason: 'Leadership traits.'},
-      ]);
+      setCareers([ { id: '1', title: 'Full Stack Developer', description: 'Build end-to-end web applications.', fitScore: 90, reason: 'Matched interest in coding.'} ]);
       setStep('selection');
-    } finally {
-      setIsAnalyzing(false);
-    }
+    } finally { setIsAnalyzing(false); }
   };
 
   const handleSearch = async () => {
       if (!searchQuery.trim()) return;
       setIsSearching(true);
-      try {
-          const results = await searchCareers(searchQuery);
-          setCareers(results);
-      } catch(e) {
-          console.error(e);
-      } finally {
-          setIsSearching(false);
-      }
+      try { const results = await searchCareers(searchQuery); setCareers(results); } catch(e) {} finally { setIsSearching(false); }
   };
 
   const handleSuggestMore = async () => {
      setIsSearching(true);
      try {
-         // Simple trick: just re-analyze with a slight randomization context or just recall API
-         // Ideally, we pass a "exclude" list, but for now, just re-calling offers variety usually.
-         const results = await analyzeInterests(answers);
-         setCareers(prev => [...prev, ...results].slice(0, 6)); // Keep up to 6
-     } catch(e) {
-         console.error(e);
-     } finally {
-         setIsSearching(false);
-     }
+         const answerArray = Object.entries(answers).map(([q, a]) => `${q}: ${a}`);
+         const results = await analyzeInterests(answerArray);
+         setCareers(prev => [...prev, ...results].slice(0, 9));
+     } catch(e) {} finally { setIsSearching(false); }
   };
 
-  const handleCareerSelect = (career: CareerOption) => {
-      setSelectedCareer(career);
+  const startAssessment = async (career: CareerOption) => {
+      setSelectedCareer(career); setStep('assessment'); setIsAssessmentLoading(true);
+      try { const quiz = await generateSkillAssessment(career.title); setAssessment(quiz); setAssessmentAnswers(new Array(quiz.questions.length).fill(-1)); } 
+      catch (e) { setStep('experience'); } finally { setIsAssessmentLoading(false); }
+  };
+
+  const submitAssessment = () => {
+      if (!assessment) return;
+      let score = 0; assessment.questions.forEach((q, i) => { if (assessmentAnswers[i] === q.correctIndex) score++; });
+      if (score === assessment.questions.length) setExpLevel('advanced');
+      else if (score > 0) setExpLevel('intermediate');
+      else setExpLevel('beginner');
       setStep('experience');
   };
 
   const handleFinalSubmit = () => {
     if (selectedCareer && eduYear && targetDate) {
-      onComplete(selectedCareer, eduYear, targetDate, expLevel, focusAreas);
+      const upskillContext = answers['What is the biggest gap in your current skillset?'] ? `Focus heavily on ${answers['What is the biggest gap in your current skillset?']}. ` : '';
+      onComplete(selectedCareer, eduYear, targetDate, expLevel, upskillContext + focusAreas);
     }
   };
 
+  // --- UI COMPONENTS ---
+  
   if (step === 'questions') {
+    const q = activeQuestions[currentQIndex];
+    const progress = ((currentQIndex) / activeQuestions.length) * 100;
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-950 text-white bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-slate-950 to-slate-950">
-        <div className="w-full max-w-2xl">
-          <div className="mb-8 flex items-center gap-2 text-indigo-400 font-medium">
-            <span className="flex items-center justify-center w-8 h-8 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-sm font-bold">
-              {currentQIndex + 1}
-            </span>
-            <span className="text-slate-500">/ {QUESTIONS.length}</span>
-          </div>
+      <div className="min-h-screen flex flex-col p-6 max-w-4xl mx-auto">
+        <div className="w-full h-1 bg-white/10 rounded-full mb-8 overflow-hidden"><div className="h-full bg-[var(--primary-500)] transition-all duration-500" style={{ width: `${progress}%` }}></div></div>
+        
+        <div className="flex-1 flex flex-col justify-center animate-fade-in">
+          <span className="text-[var(--primary-400)] font-bold uppercase tracking-wider text-sm mb-4">Question {currentQIndex + 1} of {activeQuestions.length}</span>
+          <h2 className="text-3xl md:text-5xl font-bold text-[var(--text-main)] mb-10 leading-tight">{q.text}</h2>
           
-          <h2 className="text-2xl md:text-3xl font-bold text-white mb-6 animate-fade-in leading-relaxed">
-            {QUESTIONS[currentQIndex]}
-          </h2>
-          
-          <div className="relative">
-            <textarea
-                className="w-full p-6 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-inner text-lg text-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none resize-none h-40 placeholder-slate-600 backdrop-blur-sm transition-all"
-                placeholder="Type your answer here..."
-                value={currentInput}
-                onChange={e => setCurrentInput(e.target.value)}
-                autoFocus
-                onKeyDown={(e) => {
-                    if(e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        if (currentInput.trim()) handleAnswer();
-                    }
-                }}
-            />
-            <div className="absolute bottom-4 right-4 text-xs text-slate-600">Press Enter ↵</div>
-          </div>
-          
-          <div className="mt-6 flex justify-end">
-            <button
-              onClick={handleAnswer}
-              disabled={!currentInput.trim()}
-              className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-lg shadow-indigo-900/20"
-            >
-              {currentQIndex === QUESTIONS.length - 1 ? 'Analyze Profile' : 'Next Step'}
-              <ChevronRight className="h-4 w-4" />
-            </button>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+             {q.type === 'mcq' && q.options?.map((opt) => (
+                 <button key={opt} onClick={() => handleMCQSelect(opt)} className="glass-card hover:bg-[var(--bg-card-hover)] p-6 rounded-2xl text-left transition-all hover:scale-[1.02] border-l-4 border-transparent hover:border-l-[var(--primary-500)] group">
+                    <span className="text-lg font-medium text-[var(--text-muted)] group-hover:text-[var(--text-main)]">{opt}</span>
+                 </button>
+             ))}
+             {(q.type === 'text' || q.allowOther) && (
+                 <div className="relative md:col-span-2">
+                     <input type="text" placeholder={q.type === 'text' ? "Your answer..." : "Other..."} className="w-full p-6 rounded-2xl glass-card text-[var(--text-main)] focus:border-[var(--primary-500-50)] outline-none text-lg placeholder-[var(--text-muted)]" value={otherInput} onChange={e => setOtherInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleTextSubmit()} autoFocus={q.type === 'text'}/>
+                     {otherInput && <button onClick={handleTextSubmit} className="absolute right-4 top-4 bottom-4 px-6 rounded-xl bg-[var(--primary-600)] text-white font-bold">Next</button>}
+                 </div>
+             )}
           </div>
         </div>
       </div>
     );
   }
 
-  if (step === 'analysis') {
+  if (step === 'analysis' || isAnalyzing) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center bg-slate-950">
-        <div className="animate-pulse flex flex-col items-center">
-          <div className="h-24 w-24 bg-indigo-500/20 rounded-full flex items-center justify-center mb-8 border border-indigo-500/30">
-            <Sparkles className="h-12 w-12 text-indigo-400" />
-          </div>
-          <h2 className="text-3xl font-bold text-white mb-2">Synthesizing Career Paths...</h2>
-          <p className="text-slate-400 max-w-md mx-auto">Our AI is analyzing your personality, interests, and current market trends to find your perfect match.</p>
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center">
+        <div className="relative">
+           <div className="w-32 h-32 bg-[var(--primary-500-20)] rounded-full blur-2xl absolute inset-0 animate-pulse"></div>
+           <Sparkles className="h-24 w-24 text-[var(--primary-400)] relative z-10 animate-spin" style={{ animationDuration: '3s' }} />
         </div>
+        <h2 className="text-3xl font-bold text-[var(--text-main)] mt-8 mb-2">Architecting Your Path...</h2>
+        <p className="text-[var(--text-muted)]">Analyzing your profile against millions of data points.</p>
       </div>
     );
   }
 
   if (step === 'selection') {
     return (
-      <div className="min-h-screen p-6 md:p-12 bg-slate-950 text-white">
-        <div className="max-w-6xl mx-auto">
-            <div className="flex flex-col md:flex-row justify-between items-end md:items-center mb-8 gap-4">
-                <div>
-                    <h2 className="text-3xl md:text-4xl font-bold mb-2">Select Your Path</h2>
-                    <p className="text-slate-400 text-lg">Choose a recommendation or search for your own.</p>
-                </div>
-                
-                {/* Search Bar */}
-                <div className="w-full md:w-auto relative">
-                    <input 
-                        type="text" 
-                        placeholder="Search any career (e.g. 'Chef', 'Robotics')" 
-                        className="w-full md:w-80 pl-10 pr-4 py-3 bg-slate-900 border border-slate-700 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                    />
-                    <Search className="absolute left-3 top-3.5 h-5 w-5 text-slate-500" />
-                    {searchQuery && (
-                        <button 
-                            onClick={handleSearch}
-                            disabled={isSearching}
-                            className="absolute right-2 top-2 bottom-2 px-3 bg-slate-800 rounded-lg text-xs font-bold hover:bg-slate-700 transition-colors"
-                        >
-                            {isSearching ? '...' : 'Go'}
-                        </button>
-                    )}
-                </div>
+      <div className="min-h-screen p-6 md:p-12 max-w-7xl mx-auto">
+        <header className="flex flex-col md:flex-row justify-between items-end mb-12 gap-6">
+            <div><h2 className="text-4xl font-bold text-[var(--text-main)] mb-2">Your Matches</h2><p className="text-[var(--text-muted)]">Select a path to construct your roadmap.</p></div>
+            <div className="relative w-full md:w-96">
+                <input type="text" placeholder="Search specific path..." className="w-full pl-12 pr-4 py-4 glass-card rounded-2xl text-[var(--text-main)] outline-none focus:border-[var(--primary-500-50)]" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()}/>
+                <Search className="absolute left-4 top-4.5 h-5 w-5 text-[var(--text-muted)]" />
+                {searchQuery && <button onClick={handleSearch} disabled={isSearching} className="absolute right-3 top-3 px-3 py-1.5 bg-slate-800 rounded-lg text-xs font-bold text-white">Go</button>}
             </div>
-            
-            {isSearching ? (
-                <div className="h-64 flex items-center justify-center">
-                    <div className="animate-spin h-8 w-8 border-4 border-indigo-500 border-t-transparent rounded-full"></div>
-                </div>
-            ) : (
-                <>
-                    <div className="grid md:grid-cols-3 gap-8 mb-8">
-                    {careers.map(career => (
-                        <div 
-                        key={career.id}
-                        onClick={() => handleCareerSelect(career)}
-                        className="bg-slate-900/50 backdrop-blur-sm p-8 rounded-3xl shadow-2xl hover:shadow-indigo-900/20 hover:-translate-y-2 transition-all duration-300 cursor-pointer border border-slate-800 hover:border-indigo-500 group relative overflow-hidden flex flex-col"
-                        >
-                        <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                        
-                        <div className="flex justify-between items-start mb-6 relative z-10">
-                            <div className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
-                            {career.fitScore}% Match
-                            </div>
-                            <CheckCircle className="h-6 w-6 text-slate-700 group-hover:text-indigo-400 transition-colors" />
-                        </div>
-                        
-                        <h3 className="text-2xl font-bold text-white mb-3 relative z-10 group-hover:text-indigo-300 transition-colors">{career.title}</h3>
-                        <p className="text-slate-400 mb-6 text-sm leading-relaxed relative z-10 flex-grow">{career.description}</p>
-                        
-                        <div className="mt-auto relative z-10">
-                            <div className="text-xs text-slate-500 bg-slate-950/50 p-4 rounded-xl border border-slate-800">
-                                <span className="font-semibold text-slate-300 block mb-1">Why this fits:</span> {career.reason}
-                            </div>
-                        </div>
-                        </div>
-                    ))}
+        </header>
+
+        {isSearching ? <div className="h-64 flex items-center justify-center"><div className="animate-spin h-10 w-10 border-4 border-[var(--primary-500)] border-t-transparent rounded-full"></div></div> : (
+            <>
+                <div className="grid md:grid-cols-3 gap-6 mb-12">
+                {careers.map(career => (
+                    <div key={career.id} onClick={() => startAssessment(career)} className="glass-card p-8 rounded-[2rem] hover:bg-[var(--bg-card-hover)] cursor-pointer transition-all duration-300 group hover:-translate-y-2 relative overflow-hidden">
+                         <div className="absolute top-0 right-0 p-3 bg-[var(--primary-500-20)] rounded-bl-2xl text-[var(--primary-400)] font-bold text-sm tracking-wide">{career.fitScore}% FIT</div>
+                         <div className="w-12 h-12 rounded-xl bg-[var(--primary-500-20)] flex items-center justify-center text-[var(--primary-400)] mb-6 group-hover:scale-110 transition-transform"><Compass className="h-6 w-6"/></div>
+                         <h3 className="text-2xl font-bold text-[var(--text-main)] mb-3">{career.title}</h3>
+                         <p className="text-[var(--text-muted)] text-sm leading-relaxed mb-6 h-10 line-clamp-2">{career.description}</p>
+                         <div className="p-4 bg-[var(--bg-main)]/50 rounded-xl border border-[var(--border-color)]"><span className="text-xs text-[var(--text-muted)] uppercase font-bold block mb-1">Why?</span><span className="text-[var(--text-main)] text-sm">{career.reason}</span></div>
                     </div>
-                    
-                    {careers.length > 0 && mode === 'analysis' && (
-                        <div className="text-center">
-                            <button 
-                                onClick={handleSuggestMore}
-                                className="inline-flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm font-medium"
-                            >
-                                <RefreshCw className="h-4 w-4" /> Suggest More Options
-                            </button>
-                        </div>
-                    )}
-                </>
-            )}
-        </div>
+                ))}
+                </div>
+                {careers.length > 0 && mode === 'analysis' && <div className="text-center"><button onClick={handleSuggestMore} className="text-[var(--text-muted)] hover:text-[var(--text-main)] flex items-center gap-2 mx-auto"><RefreshCw className="h-4 w-4"/> Generate more options</button></div>}
+            </>
+        )}
       </div>
     );
   }
 
-  if (step === 'experience') {
+  if (step === 'assessment') {
+     return (
+         <div className="min-h-screen flex items-center justify-center p-6">
+             <div className="glass-card w-full max-w-2xl p-8 rounded-3xl animate-fade-in relative overflow-hidden">
+                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[var(--primary-500)] via-purple-500 to-pink-500"></div>
+                 {isAssessmentLoading ? <div className="text-center py-20"><div className="animate-spin h-10 w-10 border-4 border-[var(--primary-500)] border-t-transparent rounded-full mx-auto mb-4"></div><h2 className="text-xl font-bold text-[var(--text-main)]">Generating Quiz...</h2></div> : (
+                     <>
+                        <div className="mb-8"><h2 className="text-2xl font-bold text-[var(--text-main)] mb-1">Skill Check</h2><p className="text-[var(--text-muted)]">Let's calibrate your starting point.</p></div>
+                        <div className="space-y-8">
+                            {assessment?.questions.map((q, idx) => (
+                                <div key={idx} className="space-y-3">
+                                    <p className="text-lg font-medium text-[var(--text-main)]">{idx + 1}. {q.text}</p>
+                                    <div className="grid md:grid-cols-2 gap-3">
+                                        {q.options.map((opt, optIdx) => (
+                                            <button key={optIdx} onClick={() => { const newAns = [...assessmentAnswers]; newAns[idx] = optIdx; setAssessmentAnswers(newAns); }} className={`p-4 rounded-xl text-sm font-medium text-left border transition-all ${assessmentAnswers[idx] === optIdx ? 'bg-[var(--primary-600)] border-[var(--primary-500)] text-white shadow-lg' : 'bg-[var(--bg-main)]/50 border-[var(--border-color)] text-[var(--text-muted)] hover:bg-[var(--bg-card-hover)]'}`}>{opt}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="mt-8 flex justify-end"><button onClick={submitAssessment} disabled={assessmentAnswers.includes(-1)} className="px-8 py-3 bg-[var(--primary-600)] text-white font-bold rounded-xl disabled:opacity-50 hover:bg-[var(--primary-500)] transition-colors shadow-lg shadow-[var(--primary-500-20)]">Calculate Level</button></div>
+                     </>
+                 )}
+             </div>
+         </div>
+     );
+  }
+
+  if (step === 'experience' || step === 'details') {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6 bg-slate-950">
-         <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl p-8 animate-fade-in">
-            <button 
-              onClick={() => setStep('selection')}
-              className="flex items-center gap-2 text-slate-500 hover:text-white transition-all text-sm mb-6"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back to Selection
-            </button>
-            
-            <h2 className="text-2xl font-bold text-white mb-2">Customize Learning Path</h2>
-            <p className="text-slate-400 text-sm mb-8">Tell us about your current knowledge so we can adapt the curriculum.</p>
+      <div className="min-h-screen flex items-center justify-center p-6">
+         <div className="glass-card w-full max-w-lg p-8 rounded-3xl animate-fade-in">
+            <button onClick={() => setStep(step === 'experience' ? 'selection' : 'experience')} className="text-[var(--text-muted)] hover:text-[var(--text-main)] mb-6 flex items-center gap-2 text-sm"><ArrowLeft className="h-4 w-4"/> Back</button>
+            <h2 className="text-3xl font-bold text-[var(--text-main)] mb-2">{step === 'experience' ? 'Level Set' : 'Timeline'}</h2>
+            <p className="text-[var(--text-muted)] mb-8">{step === 'experience' ? 'Confirm your proficiency.' : 'When is your deadline?'}</p>
 
             <div className="space-y-6">
-                <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-3">What is your experience level in {selectedCareer?.title}?</label>
-                    <div className="grid grid-cols-3 gap-3">
-                        {(['beginner', 'intermediate', 'advanced'] as const).map((level) => (
-                            <button
-                                key={level}
-                                onClick={() => setExpLevel(level)}
-                                className={`p-3 rounded-xl border text-sm font-medium capitalize transition-all ${expLevel === level ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800'}`}
-                            >
-                                {level}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                {expLevel !== 'beginner' && (
-                     <div className="animate-fade-in">
-                        <label className="block text-sm font-medium text-slate-300 mb-2">
-                            Upskill Goals (Optional)
-                        </label>
-                        <textarea 
-                            placeholder="e.g., I know basic React but want to learn Next.js, Performance Optimization, and Advanced Patterns."
-                            className="w-full p-4 rounded-xl bg-slate-950 border border-slate-800 text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all h-32 resize-none text-sm placeholder-slate-600"
-                            value={focusAreas}
-                            onChange={e => setFocusAreas(e.target.value)}
-                        />
-                     </div>
+                {step === 'experience' ? (
+                    <>
+                        <div className="grid grid-cols-3 gap-3">
+                            {(['beginner', 'intermediate', 'advanced'] as const).map((level) => (
+                                <button key={level} onClick={() => setExpLevel(level)} className={`p-4 rounded-xl border text-sm font-bold capitalize transition-all ${expLevel === level ? 'bg-[var(--primary-600)] border-[var(--primary-500)] text-white' : 'bg-[var(--bg-main)]/50 border-[var(--border-color)] text-[var(--text-muted)] hover:bg-[var(--bg-card-hover)]'}`}>{level}</button>
+                            ))}
+                        </div>
+                        {expLevel !== 'beginner' && (
+                            <div><label className="text-sm font-medium text-[var(--text-muted)] mb-2 block">Focus Areas</label><textarea placeholder="Specific topics..." className="w-full p-4 rounded-xl glass-card text-[var(--text-main)] outline-none h-32 resize-none" value={focusAreas} onChange={e => setFocusAreas(e.target.value)}/></div>
+                        )}
+                        <button onClick={() => setStep('details')} className="w-full py-4 bg-[var(--text-main)] text-[var(--bg-main)] font-bold rounded-xl hover:opacity-90 transition-colors mt-4">Continue</button>
+                    </>
+                ) : (
+                    <>
+                        <div><label className="text-sm font-medium text-[var(--text-muted)] mb-2 block">Current Status</label><input type="text" placeholder="e.g. Student" className="w-full p-4 rounded-xl glass-card text-[var(--text-main)] outline-none" value={eduYear} onChange={e => setEduYear(e.target.value)}/></div>
+                        <div><label className="text-sm font-medium text-[var(--text-muted)] mb-2 block">Target Date</label><input type="date" className="w-full p-4 rounded-xl glass-card text-[var(--text-main)] outline-none color-scheme-dark" value={targetDate} onChange={e => setTargetDate(e.target.value)}/></div>
+                        <button onClick={handleFinalSubmit} disabled={!eduYear || !targetDate} className="w-full py-4 bg-gradient-to-r from-[var(--primary-600)] to-purple-600 text-white font-bold rounded-xl shadow-lg mt-4 flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform">Generate Path <ArrowIcon className="h-4 w-4"/></button>
+                    </>
                 )}
-
-                <button 
-                    onClick={() => setStep('details')}
-                    className="w-full py-4 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2"
-                >
-                    Continue to Timeline <ChevronRight className="h-4 w-4" />
-                </button>
             </div>
          </div>
       </div>
     );
   }
-
-  if (step === 'details') {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-6 bg-slate-950">
-        <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl p-8 animate-fade-in">
-          <button 
-              onClick={() => setStep('experience')}
-              className="flex items-center gap-2 text-slate-500 hover:text-white transition-all text-sm mb-6"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back to Experience
-            </button>
-
-          <h2 className="text-2xl font-bold text-white mb-2">Finalize {selectedCareer?.title} Roadmap</h2>
-          <p className="text-slate-400 text-sm mb-8">The AI will strictly adapt the schedule to fit your timeline for this specific career path.</p>
-          
-          <div className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-slate-400 mb-2 flex items-center gap-2">
-                <BookOpen className="h-4 w-4 text-indigo-400" /> Current Status / Job Title
-              </label>
-              <input 
-                type="text" 
-                placeholder="e.g., 3rd Year CS Student, Working Professional"
-                className="w-full p-4 rounded-xl bg-slate-950 border border-slate-800 text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
-                value={eduYear}
-                onChange={e => setEduYear(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-400 mb-2 flex items-center gap-2">
-                <Clock className="h-4 w-4 text-indigo-400" /> Target Completion Date
-              </label>
-              <input 
-                type="date" 
-                className="w-full p-4 rounded-xl bg-slate-950 border border-slate-800 text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none color-scheme-dark"
-                value={targetDate}
-                onChange={e => setTargetDate(e.target.value)}
-              />
-              <p className="text-xs text-slate-500 mt-2">
-                 We will generate a roadmap that starts today and ends on this date.
-              </p>
-            </div>
-
-            <button 
-              onClick={handleFinalSubmit}
-              disabled={!eduYear || !targetDate}
-              className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-900/20 mt-4"
-            >
-              <Target className="h-5 w-5" />
-              Generate Optimized Roadmap
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return null;
 };
