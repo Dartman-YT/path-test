@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { UserProfile } from '../types';
 import { getUsers, saveUser, setCurrentUser } from '../services/store';
-import { Lock, User as UserIcon, Key, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Lock, User as UserIcon, Key, ArrowRight, ShieldCheck, Sparkles } from 'lucide-react';
 
 interface AuthProps {
   onLogin: (user: UserProfile) => void;
@@ -30,7 +30,10 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
       securityKey: formData.securityKey,
       subscriptionStatus: 'free',
       onboardingComplete: false,
-      activeCareers: []
+      activeCareers: [],
+      xp: 0,
+      streak: 0,
+      theme: { mode: 'dark', primaryColor: 'indigo' }
     };
     
     saveUser(newUser);
@@ -62,42 +65,48 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-slate-950 p-4 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-slate-950 to-slate-950">
-      <div className="w-full max-w-md bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl overflow-hidden">
-        <div className="p-8">
-          <div className="text-center mb-8">
-            <div className="mx-auto w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center mb-4 shadow-lg shadow-indigo-500/30">
-               <ShieldCheck className="text-white h-7 w-7" />
+    <div className="flex items-center justify-center min-h-screen p-4 relative overflow-hidden">
+      {/* Background Decor */}
+      <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] bg-[var(--primary-500-20)] rounded-full blur-[100px] animate-pulse-slow"></div>
+      <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] bg-purple-500/20 rounded-full blur-[100px] animate-pulse-slow delay-1000"></div>
+
+      <div className="w-full max-w-md glass-card rounded-[2.5rem] shadow-2xl overflow-hidden relative z-10 animate-fade-in border-t border-[var(--border-color)]">
+        <div className="p-8 md:p-10">
+          <div className="text-center mb-10">
+            <div className="mx-auto w-16 h-16 bg-gradient-to-tr from-[var(--primary-500)] to-purple-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-[var(--primary-500-20)] transform rotate-3 hover:rotate-6 transition-transform duration-500">
+               <ShieldCheck className="text-white h-8 w-8" />
             </div>
-            <h1 className="text-3xl font-bold text-white tracking-tight">PathFinder AI</h1>
-            <p className="text-slate-400 mt-2 text-sm">
-              {view === 'login' && 'Welcome back, professional.'}
-              {view === 'signup' && 'Architect your future.'}
-              {view === 'forgot' && 'Secure account recovery.'}
+            <h1 className="text-4xl font-extrabold text-[var(--text-main)] tracking-tight mb-2">PathFinder AI</h1>
+            <p className="text-[var(--text-muted)] text-sm font-medium tracking-wide uppercase">
+              {view === 'login' ? 'Access Terminal' : view === 'signup' ? 'New Architect' : 'Recovery Mode'}
             </p>
           </div>
 
-          <div className="space-y-4">
-            {error && <div className="p-3 text-sm text-red-400 bg-red-900/20 border border-red-900/50 rounded-lg text-center">{error}</div>}
+          <div className="space-y-5">
+            {error && (
+                <div className="p-3 text-sm text-rose-200 bg-rose-500/10 border border-rose-500/20 rounded-xl text-center backdrop-blur-sm animate-fade-in">
+                    {error}
+                </div>
+            )}
             
             <div className="relative group">
-              <UserIcon className="absolute left-3 top-3.5 h-5 w-5 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
+              <UserIcon className="absolute left-4 top-4 h-5 w-5 text-[var(--text-muted)] group-focus-within:text-[var(--primary-400)] transition-colors" />
               <input 
                 type="text" 
-                placeholder="User ID / Email" 
-                className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-800/50 border border-slate-700 text-white placeholder-slate-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                placeholder="User ID" 
+                className="w-full pl-12 pr-4 py-4 rounded-2xl bg-[var(--bg-main)]/30 border border-[var(--border-color)] text-[var(--text-main)] placeholder-[var(--text-muted)] focus:border-[var(--primary-500-50)] focus:bg-[var(--bg-main)]/50 focus:ring-2 focus:ring-[var(--primary-500-20)] outline-none transition-all"
                 value={formData.id}
                 onChange={e => setFormData({...formData, id: e.target.value})}
               />
             </div>
 
             {view === 'signup' && (
-              <div className="relative group">
-                <UserIcon className="absolute left-3 top-3.5 h-5 w-5 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
+              <div className="relative group animate-fade-in">
+                <Sparkles className="absolute left-4 top-4 h-5 w-5 text-[var(--text-muted)] group-focus-within:text-[var(--primary-400)] transition-colors" />
                 <input 
                   type="text" 
                   placeholder="Display Name" 
-                  className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-800/50 border border-slate-700 text-white placeholder-slate-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                  className="w-full pl-12 pr-4 py-4 rounded-2xl bg-[var(--bg-main)]/30 border border-[var(--border-color)] text-[var(--text-main)] placeholder-[var(--text-muted)] focus:border-[var(--primary-500-50)] focus:bg-[var(--bg-main)]/50 focus:ring-2 focus:ring-[var(--primary-500-20)] outline-none transition-all"
                   value={formData.username}
                   onChange={e => setFormData({...formData, username: e.target.value})}
                 />
@@ -105,12 +114,12 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             )}
 
             {view !== 'forgot' && (
-                <div className="relative group">
-                <Lock className="absolute left-3 top-3.5 h-5 w-5 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
+                <div className="relative group animate-fade-in">
+                <Lock className="absolute left-4 top-4 h-5 w-5 text-[var(--text-muted)] group-focus-within:text-[var(--primary-400)] transition-colors" />
                 <input 
                     type="password" 
                     placeholder="Password" 
-                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-800/50 border border-slate-700 text-white placeholder-slate-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                    className="w-full pl-12 pr-4 py-4 rounded-2xl bg-[var(--bg-main)]/30 border border-[var(--border-color)] text-[var(--text-main)] placeholder-[var(--text-muted)] focus:border-[var(--primary-500-50)] focus:bg-[var(--bg-main)]/50 focus:ring-2 focus:ring-[var(--primary-500-20)] outline-none transition-all"
                     value={formData.password}
                     onChange={e => setFormData({...formData, password: e.target.value})}
                 />
@@ -118,12 +127,12 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             )}
 
             {(view === 'signup' || view === 'forgot') && (
-              <div className="relative group">
-                <Key className="absolute left-3 top-3.5 h-5 w-5 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
+              <div className="relative group animate-fade-in">
+                <Key className="absolute left-4 top-4 h-5 w-5 text-[var(--text-muted)] group-focus-within:text-[var(--primary-400)] transition-colors" />
                 <input 
                   type="text" 
-                  placeholder="Security Key (Remember this!)" 
-                  className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-800/50 border border-slate-700 text-white placeholder-slate-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                  placeholder="Security Key" 
+                  className="w-full pl-12 pr-4 py-4 rounded-2xl bg-[var(--bg-main)]/30 border border-[var(--border-color)] text-[var(--text-main)] placeholder-[var(--text-muted)] focus:border-[var(--primary-500-50)] focus:bg-[var(--bg-main)]/50 focus:ring-2 focus:ring-[var(--primary-500-20)] outline-none transition-all"
                   value={formData.securityKey}
                   onChange={e => setFormData({...formData, securityKey: e.target.value})}
                 />
@@ -132,25 +141,25 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
             <button 
               onClick={view === 'login' ? handleLogin : view === 'signup' ? handleSignup : handleReset}
-              className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl shadow-lg shadow-indigo-900/20 transition-all transform active:scale-95 flex items-center justify-center gap-2"
+              className="w-full py-4 bg-gradient-to-r from-[var(--primary-600)] to-purple-600 hover:from-[var(--primary-500)] hover:to-purple-500 text-white font-bold rounded-2xl shadow-lg shadow-[var(--primary-500-20)] transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2 mt-4"
             >
-              {view === 'login' ? 'Sign In' : view === 'signup' ? 'Create Account' : 'Recover Account'}
+              {view === 'login' ? 'Initiate Session' : view === 'signup' ? 'Join Network' : 'Recover Access'}
               <ArrowRight className="h-5 w-5" />
             </button>
           </div>
 
-          <div className="mt-6 text-center space-y-2">
+          <div className="mt-8 text-center space-y-3">
             {view === 'login' && (
               <>
-                <p className="text-sm text-slate-400">
-                  New here? <button onClick={() => {setError(''); setView('signup');}} className="text-indigo-400 font-medium hover:underline">Create an account</button>
+                <p className="text-sm text-[var(--text-muted)]">
+                  New Protocol? <button onClick={() => {setError(''); setView('signup');}} className="text-[var(--primary-400)] font-semibold hover:text-[var(--primary-500)] transition-colors">Create ID</button>
                 </p>
-                <button onClick={() => {setError(''); setView('forgot');}} className="text-xs text-slate-500 hover:text-slate-300">Forgot Password?</button>
+                <button onClick={() => {setError(''); setView('forgot');}} className="text-xs text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors">Lost Credentials?</button>
               </>
             )}
             {(view === 'signup' || view === 'forgot') && (
-              <p className="text-sm text-slate-400">
-                Already have an account? <button onClick={() => {setError(''); setView('login');}} className="text-indigo-400 font-medium hover:underline">Log in</button>
+              <p className="text-sm text-[var(--text-muted)]">
+                Return to <button onClick={() => {setError(''); setView('login');}} className="text-[var(--primary-400)] font-semibold hover:text-[var(--primary-500)] transition-colors">Login</button>
               </p>
             )}
           </div>
