@@ -5,81 +5,18 @@ import { CareerOption, RoadmapPhase, NewsItem, RoadmapItem, DailyChallenge, Skil
 // Helper to get AI instance safely at runtime
 const getAI = () => {
   try {
+      // Basic check to prevent immediate crash if key is missing, 
+      // though functionality will obviously fail.
       const key = process.env.API_KEY;
       if (!key) throw new Error("API Key missing");
       return new GoogleGenAI({ apiKey: key });
   } catch (e) {
       console.warn("Gemini Client Init Warning:", e);
+      // Return a dummy object or handle upstream. 
+      // For now, let's allow it to throw inside the specific functions if key is missing.
       return new GoogleGenAI({ apiKey: 'DUMMY_KEY_FOR_BUILD' });
   }
 };
-
-// --- FALLBACK DATA GENERATORS ---
-
-const getFallbackRoadmap = (careerTitle: string): RoadmapPhase[] => [
-    {
-        phaseName: "Phase 1: Foundations (Offline Mode)",
-        items: [
-            {
-                id: "fallback-1",
-                title: `Introduction to ${careerTitle}`,
-                description: "We reached our AI usage limit. Start by researching the core fundamentals of this field manually.",
-                type: "skill",
-                duration: "1 day",
-                status: "pending",
-                importance: "high",
-                isAIAdaptation: false
-            },
-            {
-                id: "fallback-2",
-                title: "Set Up Environment",
-                description: "Install necessary tools and software required for this career path.",
-                type: "project",
-                duration: "1 day",
-                status: "pending",
-                importance: "high",
-                isAIAdaptation: false
-            },
-            {
-                id: "fallback-3",
-                title: "Community Research",
-                description: "Find and join 3 online communities (Reddit, Discord, LinkedIn) related to this field.",
-                type: "skill",
-                duration: "1 day",
-                status: "pending",
-                importance: "medium",
-                isAIAdaptation: false
-            }
-        ]
-    }
-];
-
-const getFallbackDailyChallenge = (): DailyChallenge => ({
-    question: "Logic Puzzle: If you have a 3-gallon jug and a 5-gallon jug, how do you measure exactly 4 gallons?",
-    options: ["Fill 5, pour into 3, empty 3, pour remaining 2 into 3, fill 5, pour into 3.", "Fill both and pour out half.", "It is impossible.", "Fill 3, pour into 5, fill 3 again."],
-    correctAnswer: 0,
-    explanation: "Standard water jug riddle logic! (AI Quota limit reached, showing offline puzzle)",
-    difficulty: "medium"
-});
-
-const getFallbackTrivia = (): TriviaQuestion => ({
-    question: "Which number is known as the 'Magic Number' in physics?",
-    options: ["137", "42", "3.14", "0"],
-    correctIndex: 0
-});
-
-const getFallbackSimulation = (careerTitle: string): Simulation => ({
-    title: "Crisis Management (Offline)",
-    scenario: `You are working as a ${careerTitle} and a critical system/process has failed. The AI service is currently unavailable to generate a specific scenario. How do you proceed?`,
-    role: careerTitle,
-    options: [
-        { text: "Panic and escalate immediately", outcome: "Not ideal. Try to analyze first.", score: 10 },
-        { text: "Analyze the logs/situation calmly", outcome: "Correct approach. Assessment is key.", score: 50 },
-        { text: "Ignore it until tomorrow", outcome: "Negligence. The issue worsened.", score: 0 }
-    ]
-});
-
-// --- API FUNCTIONS ---
 
 export const analyzeInterests = async (answers: string[]): Promise<CareerOption[]> => {
   const ai = getAI();
@@ -117,12 +54,7 @@ export const analyzeInterests = async (answers: string[]): Promise<CareerOption[
       return text ? JSON.parse(text) : [];
   } catch (e) {
       console.error("Analysis failed", e);
-      // Fallback options
-      return [
-          { id: '1', title: 'Software Engineer', description: 'Build and maintain software systems.', fitScore: 85, reason: 'High demand and versatile.' },
-          { id: '2', title: 'Data Analyst', description: 'Interpret data to solve problems.', fitScore: 80, reason: 'Analytical approach.' },
-          { id: '3', title: 'Digital Marketer', description: 'Promote products online.', fitScore: 75, reason: 'Creative and strategic.' }
-      ];
+      return [];
   }
 };
 
@@ -130,7 +62,11 @@ export const searchCareers = async (query: string): Promise<CareerOption[]> => {
   const ai = getAI();
   const prompt = `
     User wants to search for a career path related to: "${query}".
+    
     Generate 3 distinct career options that match this search query.
+    If the query is specific (e.g. "React Developer"), provide variations or levels.
+    If generic (e.g. "Tech"), provide diverse options.
+    
     Fit Score should be based on relevance to the query string "${query}".
   `;
 
@@ -160,7 +96,7 @@ export const searchCareers = async (query: string): Promise<CareerOption[]> => {
       return text ? JSON.parse(text) : [];
   } catch (e) {
       console.error("Search failed", e);
-      return [{ id: 'search-fallback', title: query, description: 'Custom search result.', fitScore: 100, reason: 'Direct match.' }];
+      return [];
   }
 };
 
@@ -169,6 +105,8 @@ export const generateSkillAssessment = async (careerTitle: string): Promise<Skil
     const prompt = `
       Create a short technical skill assessment for the career: "${careerTitle}".
       Generate exactly 3 multiple-choice questions.
+      The questions should range from basic to intermediate difficulty to gauge proficiency.
+      
       Output JSON with 'questions' array.
     `;
     
@@ -200,13 +138,7 @@ export const generateSkillAssessment = async (careerTitle: string): Promise<Skil
         const text = response.text;
         return text ? JSON.parse(text) : { questions: [] };
     } catch (e) {
-        return { 
-            questions: [
-                { text: `How would you rate your knowledge of ${careerTitle}?`, options: ["None", "Basic", "Good", "Expert"], correctIndex: 2 },
-                { text: "Have you worked on a project in this field?", options: ["No", "Yes, academic", "Yes, professional", "Yes, personal"], correctIndex: 2 },
-                { text: "Are you familiar with the industry tools?", options: ["No", "Heard of them", "Yes", "Mastered"], correctIndex: 2 }
-            ] 
-        };
+        return { questions: [] };
     }
 };
 
@@ -214,6 +146,8 @@ export const generateDailyChallenge = async (careerTitle: string, level: string)
     const ai = getAI();
     const prompt = `
       Generate a single "Daily Quest" multiple-choice question for a ${level} ${careerTitle}.
+      It should be a practical, real-world scenario or a technical concept check.
+      
       Output strict JSON.
     `;
     
@@ -237,9 +171,15 @@ export const generateDailyChallenge = async (careerTitle: string, level: string)
             }
         });
         const text = response.text;
-        return text ? JSON.parse(text) : getFallbackDailyChallenge();
+        return text ? JSON.parse(text) : null;
     } catch (e) {
-        return getFallbackDailyChallenge();
+        return { 
+            question: "Daily Challenge System Maintenance", 
+            options: ["Check back later"], 
+            correctAnswer: 0, 
+            explanation: "System is updating.", 
+            difficulty: "easy" 
+        } as any;
     }
 };
 
@@ -247,7 +187,9 @@ export const generateSimulation = async (careerTitle: string): Promise<Simulatio
     const ai = getAI();
     const prompt = `
       Create a mini "Job Simulation" scenario for a ${careerTitle}.
+      This should be a role-playing challenge where the user faces a specific problem (e.g., a bug, a client request, a design conflict).
       Provide 3 choices for how they react.
+      
       Output strict JSON.
     `;
     
@@ -270,7 +212,7 @@ export const generateSimulation = async (careerTitle: string): Promise<Simulatio
                                 properties: {
                                     text: { type: Type.STRING },
                                     outcome: { type: Type.STRING },
-                                    score: { type: Type.NUMBER }
+                                    score: { type: Type.NUMBER } // 10-50 points
                                 },
                                 required: ['text', 'outcome', 'score']
                             }
@@ -281,9 +223,9 @@ export const generateSimulation = async (careerTitle: string): Promise<Simulatio
             }
         });
         const text = response.text;
-        return text ? JSON.parse(text) : getFallbackSimulation(careerTitle);
+        return text ? JSON.parse(text) : null;
     } catch (e) {
-        return getFallbackSimulation(careerTitle);
+        return null;
     }
 };
 
@@ -291,6 +233,8 @@ export const generateTriviaQuestion = async (careerTitle: string): Promise<Trivi
     const ai = getAI();
     const prompt = `
       Generate a single trivia multiple-choice question related to "${careerTitle}".
+      It should be fun, interesting, or surprising.
+      
       Output strict JSON with 'question', 'options' (array of 4 strings), and 'correctIndex' (number 0-3).
     `;
     
@@ -312,9 +256,17 @@ export const generateTriviaQuestion = async (careerTitle: string): Promise<Trivi
             }
         });
         const text = response.text;
-        return text ? JSON.parse(text) : getFallbackTrivia();
+        return text ? JSON.parse(text) : { 
+             question: "Which of these is a key concept in " + careerTitle + "?",
+             options: ["Option A", "Option B", "Option C", "Option D"],
+             correctIndex: 0
+        };
     } catch (e) {
-        return getFallbackTrivia();
+        return { 
+            question: "Practice question unavailable.", 
+            options: ["Try again", "Later", "Check connection", "Wait"], 
+            correctIndex: 0 
+        };
     }
 };
 
@@ -324,7 +276,9 @@ export const generatePhaseSummary = async (phaseName: string, items: RoadmapItem
     const prompt = `
         The user has just completed the phase "${phaseName}" in their career roadmap.
         Completed items: ${itemTitles}.
-        Write a brief, motivating summary (2-3 sentences).
+        
+        Write a brief, motivating summary (2-3 sentences) of what they have achieved.
+        Focus on the skills gained. Do not use markdown. Be conversational and encouraging.
     `;
 
     try {
@@ -332,9 +286,9 @@ export const generatePhaseSummary = async (phaseName: string, items: RoadmapItem
             model: 'gemini-2.5-flash',
             contents: prompt
         });
-        return response.text || "Phase complete! You are making excellent progress.";
+        return response.text || "Great job completing this phase! You've mastered key concepts.";
     } catch (e) {
-        return "Great job completing this phase! Keep up the momentum.";
+        return "Phase complete! You are making excellent progress.";
     }
 };
 
@@ -354,12 +308,13 @@ export const calculateRemainingDays = (phases: RoadmapPhase[]): number => {
                     const val = parseInt(duration) || 1;
                     totalDays += val;
                 } else {
+                    // Default for "hours" or unknown
                     totalDays += 1;
                 }
             }
         });
     });
-    return totalDays || 1;
+    return totalDays || 1; // Minimum 1 day
 };
 
 export const generateRoadmap = async (
@@ -375,55 +330,125 @@ export const generateRoadmap = async (
   }
 ): Promise<RoadmapPhase[]> => {
   const ai = getAI();
+  // Calculate exact duration matching Dashboard logic (Inclusive Days)
   const start = new Date();
   start.setHours(12, 0, 0, 0);
 
+  // Manual parse to ensure local time noon alignment, prevent timezone shifting
   const parts = targetDate.split('-');
   const end = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 12, 0, 0);
   
   const diffTime = end.getTime() - start.getTime();
   const diffDaysRaw = Math.round(diffTime / (1000 * 60 * 60 * 24));
+  
+  // Add 1 to make it inclusive (e.g. Target=Today is 1 day of work)
   const diffDays = diffDaysRaw >= 0 ? diffDaysRaw + 1 : 0;
   
+  const durationContext = diffDays <= 0 
+    ? "The target date is in the past. Create a crash course for TODAY only." 
+    : `The user has EXACTLY ${diffDays} DAYS remaining to complete this.`;
+
+  // Use diffDays for logic, but ensure at least 1 for granularity checks
   const effectiveDays = diffDays <= 0 ? 1 : diffDays;
   const startPhase = adaptationContext?.startingPhaseNumber || 1;
 
+  // Adaptation Instructions
   let adaptationPrompt = "";
+  
   switch (adaptationContext?.type) {
       case 'compress_schedule':
-          adaptationPrompt = `STRATEGY: COMPRESS. Fit to ${effectiveDays} days. Higher pace.`;
+          adaptationPrompt = `
+          STRATEGY: COMPRESS / INCREASE PACE (Shortened Deadline).
+          - The user selected a date SOONER than before (${effectiveDays} days left).
+          - They chose to "Redistribute to new date".
+          - KEEP all the original topics and curriculum. Do NOT remove content.
+          - Simply COMPRESS the schedule to fit the shorter timeframe.
+          - This will result in a higher daily workload (Fast Pace).
+          `;
           break;
       case 'simplify_schedule':
-          adaptationPrompt = `STRATEGY: SIMPLIFY. Remove optional content. Fit to ${effectiveDays} days.`;
+          adaptationPrompt = `
+          STRATEGY: SIMPLIFY / REDUCE CONTENT (Shortened Deadline).
+          - The user selected a date SOONER than before (${effectiveDays} days left).
+          - They chose to "Reduce Content".
+          - REMOVE optional, advanced, or niche topics.
+          - Focus ONLY on the absolute essentials to maintain a normal, stress-free pace within the shorter time.
+          `;
           break;
       case 'redistribute':
-          adaptationPrompt = `STRATEGY: REDISTRIBUTE. Spread evenly over ${effectiveDays} days.`;
+          adaptationPrompt = `
+          STRATEGY: REDISTRIBUTE (Same or Extended Deadline).
+          - The user wants to spread the remaining items evenly over ${effectiveDays} days.
+          - Aim for Stress-Free Learning.
+          - Add revision days, practice buffers, and ensure the pace is relaxed.
+          - Do NOT add new difficult content unless necessary to fill a massive gap.
+          `;
           break;
       case 'append_content':
-          adaptationPrompt = `STRATEGY: APPEND DIFFICULTY. Add advanced topics to fill ${effectiveDays} days.`;
+          adaptationPrompt = `
+          STRATEGY: APPEND DIFFICULTY (Extended Deadline).
+          - The user has extended the deadline to ${effectiveDays} days.
+          - They want to "Add Difficulty/More Content".
+          - Keep the core curriculum.
+          - Add NEW, ADVANCED, or SPECIALIZED phases at the end to fill the extra time.
+          - Suggest "Senior Level" or "Specialist" topics.
+          - Mark new items with 'isAIAdaptation': true.
+          `;
           break;
       case 'increase_difficulty_same_time':
-           adaptationPrompt = `STRATEGY: INCREASE DIFFICULTY. Same ${effectiveDays} days, harder content.`;
+           adaptationPrompt = `
+           STRATEGY: INCREASE DIFFICULTY (Same Deadline).
+           - The deadline is unchanged (${effectiveDays} days).
+           - The user wants a bigger challenge.
+           - Replace basic tasks with advanced/complex versions.
+           - The schedule must remain ${effectiveDays} days long, but the CONTENT must be harder/deeper.
+           - Mark changed items with 'isAIAdaptation': true.
+           `;
            break;
       default:
+           // Initial generation or generic
            adaptationPrompt = "Create a balanced roadmap fitting the duration.";
   }
 
   const context = adaptationContext?.progressStr ? `Current Context: ${adaptationContext.progressStr}` : '';
+  
+  // Tailor prompt based on experience
+  let experienceInstruction = '';
+  if (experienceLevel === 'beginner') {
+      experienceInstruction = 'User is a complete beginner. Start from absolute basics.';
+  } else {
+      experienceInstruction = `User is ${experienceLevel} level. SKIP basic introductions. Focus on advanced concepts. ${focusAreas ? `Focus heavily on: ${focusAreas}.` : ''}`;
+  }
+
   const prompt = `
     Create a strict, detailed educational roadmap for a user wanting to become a "${careerTitle}".
-    Target Date: ${targetDate} (${effectiveDays} days left).
-    Exp Level: ${experienceLevel}.
-    ${focusAreas ? `Focus: ${focusAreas}.` : ''}
+    Current Status: ${currentLevel}.
+    Target Completion Date: ${targetDate} (${effectiveDays} days from now).
+    Experience Level: ${experienceLevel}.
+    ${experienceInstruction}
     ${context}
     ${adaptationPrompt}
     
-    RULES:
-    1. Total tasks must sum to approx ${effectiveDays} days.
-    2. EACH item must be exactly "1 day" duration. Split big topics.
-    3. Start from Phase ${startPhase}.
+    IMPORTANT TIMELINE RULES (CRITICAL):
+    1. **Strict Duration**: The sum of the duration of all items generated MUST roughly equal ${effectiveDays} days. 
+    2. **Do NOT** generate 150 days of content if the limit is ${effectiveDays} days. Fit the content to the time.
+    3. **Granularity**: The roadmap MUST be broken down into strict "1 day" tasks.
+       - **EVERY SINGLE ITEM MUST HAVE A DURATION OF '1 day'**. 
+       - Do NOT use "2 days", "1 week", etc. Break larger topics into "Part 1", "Part 2", etc.
+       - Example: Instead of "Learn React (3 days)", output: "Learn React Basics (1 day)", "Learn React Hooks (1 day)", "Learn React State (1 day)".
+       - This is a DAILY PLANNER.
+    4. **Rounding**: ALWAYS use integer numbers for days.
     
-    Return JSON format with 'phaseName' and 'items' array.
+    CONTINUATION RULE:
+    This might be a continuation of an existing roadmap. Start numbering the phases from Phase ${startPhase}.
+    
+    OTHER REQUIREMENTS:
+    1. **Structure**: Divide into logical phases.
+    2. **Links**: Provide generic URLs for 'internship', 'certificate', or 'project'.
+    3. **Items**: Mix skills, projects, internships, and certificates.
+    4. **Badge**: If adaptation added special items, set 'isAIAdaptation' to true.
+    
+    Return JSON format.
   `;
 
   try {
@@ -463,20 +488,20 @@ export const generateRoadmap = async (
         }
       });
       const text = response.text;
-      return text ? JSON.parse(text) : getFallbackRoadmap(careerTitle);
+      return text ? JSON.parse(text) : [];
   } catch (e) {
+      // Fallback roadmap to prevent app crash
       console.error("Roadmap generation failed", e);
-      return getFallbackRoadmap(careerTitle);
+      return [];
   }
 };
 
 export const fetchTechNews = async (careerInterest: string): Promise<NewsItem[]> => {
   try {
     const ai = getAI();
-    // Using simple search tool
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash', 
-      contents: `Find 5 recent news articles related to "${careerInterest}".`,
+      contents: `Find 5 distinct, recent (last 30 days) news articles or major announcements specifically related to "${careerInterest}".`,
       config: {
         tools: [{ googleSearch: {} }],
       }
@@ -490,9 +515,10 @@ export const fetchTechNews = async (careerInterest: string): Promise<NewsItem[]>
              let hostname = "Web Source";
              try {
                  const urlObj = new URL(c.web.uri);
-                 let h = urlObj.hostname.replace('www.', '');
-                 // Filter internal Google domains
+                 const h = urlObj.hostname.replace('www.', '');
+                 // Filter internal Google domains and generic garbage
                  if (h.includes('google') || h.includes('vervel') || h.includes('corp') || h.includes('gstatic')) {
+                     // Try to get source from title "Title - Source" or just use "Tech News"
                      const titleParts = c.web.title.split('-');
                      if (titleParts.length > 1) {
                         hostname = titleParts[titleParts.length - 1].trim();
@@ -507,7 +533,7 @@ export const fetchTechNews = async (careerInterest: string): Promise<NewsItem[]>
              }
              return {
                 title: c.web.title,
-                summary: "Click to read full story.", 
+                summary: "Read the full coverage at the source.", 
                 url: c.web.uri,
                 source: hostname,
                 date: "Recent"
@@ -515,27 +541,31 @@ export const fetchTechNews = async (careerInterest: string): Promise<NewsItem[]>
         });
 
     const uniqueItems = webChunks.filter((item: any, index: number, self: any[]) =>
-        index === self.findIndex((t) => t.url === item.url)
+        index === self.findIndex((t) => (
+            t.url === item.url
+        ))
     ).slice(0, 5); 
 
     if (uniqueItems.length > 0) return uniqueItems;
-    
-    // If no chunks but no error, generic fallback
-    throw new Error("No news found");
 
-  } catch (e: any) {
+    return [
+         { 
+            title: `Latest News: ${careerInterest}`, 
+            summary: "Search for the latest updates on Google News.", 
+            url: `https://www.google.com/search?q=${encodeURIComponent(careerInterest + " news")}&tbm=nws`, 
+            source: "Google News", 
+            date: "Today" 
+        }
+    ];
+
+  } catch (e) {
     console.error("Failed to fetch news", e);
-    // Determine if it's a quota error or generic
-    const isQuota = e.message?.includes('429') || e.status === 429 || e.toString().includes('RESOURCE_EXHAUSTED');
-    const title = isQuota ? "News Unavailable (Quota Limit)" : `${careerInterest} Updates`;
-    const summary = isQuota ? "Our AI news service is currently overloaded. Please check Google News directly." : "Could not fetch latest headlines.";
-    
     return [
         { 
-            title: title, 
-            summary: summary, 
-            url: `https://www.google.com/search?q=${encodeURIComponent(careerInterest + " news")}&tbm=nws`, 
-            source: "System", 
+            title: `${careerInterest} Updates`, 
+            summary: "Explore the latest updates.", 
+            url: `https://www.google.com/search?q=${encodeURIComponent(careerInterest + " news")}`, 
+            source: "Google Search", 
             date: "Now" 
         }
     ];
@@ -545,10 +575,15 @@ export const fetchTechNews = async (careerInterest: string): Promise<NewsItem[]>
 export const getChatResponse = async (message: string, context: string): Promise<string> => {
     const ai = getAI();
     const prompt = `
-        You are 'PathFinder AI Assistant', a career guide.
-        Context: User is pursuing "${context}".
+        You are 'PathFinder AI Assistant', a helpful and motivating career guide for a user.
+        Context: The user is pursuing a career in "${context}".
+        
         User Query: "${message}"
-        Answer concisely.
+        
+        Answer their question concisely.
+        If they ask about the app features, explain them.
+        If they ask for career advice, give professional advice suitable for a "${context}" role.
+        Be encouraging. Keep responses under 50 words unless detailed explanation is needed.
     `;
     
     try {
@@ -558,6 +593,6 @@ export const getChatResponse = async (message: string, context: string): Promise
         });
         return response.text || "I'm here to help with your career journey.";
     } catch (e) {
-        return "I'm having trouble connecting to the AI brain right now (Quota Limit). Please try again later.";
+        return "I'm having a bit of trouble connecting right now. Please try again in a moment.";
     }
 };
